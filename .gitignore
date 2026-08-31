@@ -1,0 +1,21 @@
+# Operational extracts — never commit
+monitoramento*.xlsx
+~$*.xlsx
+output/
+Prazo*.xlsx
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# OS / IDE
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
