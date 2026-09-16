@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.ingest import resolve_prazo
 from src.preventivo_lastmile import (
     RESUMO_VENCE_HOJE,
     PreventivoRoutine,
@@ -124,9 +125,10 @@ def main() -> int:
         prazo_lookup = None
         only_bases = None
         if args.prazo:
-            prazo_path = Path(args.prazo).expanduser()
-            if not prazo_path.is_file():
-                print(f"ERRO: prazo não encontrado: {prazo_path}", file=sys.stderr)
+            try:
+                prazo_path = resolve_prazo(args.prazo)
+            except FileNotFoundError as exc:
+                print(f"ERRO: {exc}", file=sys.stderr)
                 return 2
             print("Calculando RESUMO por inbound + prazo D0/D+N…", flush=True)
             prazo_lookup, responsabilidade = load_prazo_tables(prazo_path)

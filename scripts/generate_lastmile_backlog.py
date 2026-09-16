@@ -1,8 +1,7 @@
 r"""Gera o pacote diário de backlog e exceções de SLA por base.
 
-Exemplo:
+Exemplo (xlsx em data/monitoramento):
     python scripts/generate_lastmile_backlog.py ^
-      --input "C:\Users\user\Downloads\monitoramento ...xlsx" ^
       --as-of 2026-08-06 --out output\lastmile_2026-08-06
 """
 
@@ -20,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.backlog_lastmile import LastMileRoutine, build_lastmile_routine, load_lastmile_source
+from src.ingest import ingest_monitoramento, resolve_monitoramento, resolve_prazo
 from src.preventivo_lastmile import bases_for_owner, load_prazo_tables
 
 
@@ -77,7 +77,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Consolida backlog Last Mile e exceções de SLA para envio às bases."
     )
-    parser.add_argument("--input", required=True, help="Caminho do XLSX da Tabela Mestra.")
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="XLSX/Parquet da Tabela Mestra (padrão: data/monitoramento ou raiz).",
+    )
     parser.add_argument(
         "--out",
         default="output/lastmile",
@@ -111,7 +115,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--prazo",
         default=None,
-        help="Prazo Lastmille e Responsabilidade.xlsx — usado só para filtrar a carteira.",
+        help="Prazo Lastmille e Responsabilidade.xlsx — usado só para filtrar a carteira. "
+        "Se omitido com --responsavel, procura em data/prazo.",
+    )
+    parser.add_argument(
+        "--skip-ingest",
+        action="store_true",
+        help="Não grava Parquet da torre.",
+    )
+    parser.add_argument(
+        "--force-ingest",
+        action="store_true",
+        help="Reconverte o XLSX mesmo se o Parquet já estiver atualizado.",
     )
     parser.add_argument(
         "--responsavel",
@@ -123,9 +138,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    source = Path(args.input).expanduser()
-    if not source.is_file():
-        print(f"ERRO: arquivo não encontrado: {source}", file=sys.stderr)
+    try:
+        if args.skip_ingest:
+            source = resolve_monitoramento(args.input)
+        else:
+            print("Ingerindo monitoramento -> Parquet da torre...", flush=True)
+            ingest = ingest_monitoramento(args.input, force=args.force_ingest)
+            source = ingest.parquet
+            verb = "já atualizado" if ingest.skipped else "convertido"
+            print(f"  {verb}: {ingest.parquet.name}", flush=True)
+    except FileNotFoundError as exc:
+        print(f"ERRO: {exc}", file=sys.stderr)
         return 2
 
     try:
@@ -137,14 +160,15 @@ def main() -> int:
         return 2
 
     try:
-        print("Lendo extração (modo rápido, colunas Last Mile)…", flush=True)
+        print("Lendo extracao (modo rapido, colunas Last Mile)...", flush=True)
         tracking = load_lastmile_source(source, as_of=reference)
         print(f"  Linhas lidas: {len(tracking):,}".replace(",", "."), flush=True)
         only_bases = None
-        if args.prazo and args.responsavel:
-            prazo_path = Path(args.prazo).expanduser()
-            if not prazo_path.is_file():
-                print(f"ERRO: prazo não encontrado: {prazo_path}", file=sys.stderr)
+        if args.responsavel:
+            try:
+                prazo_path = resolve_prazo(args.prazo)
+            except FileNotFoundError as exc:
+                print(f"ERRO: {exc}", file=sys.stderr)
                 return 2
             _, responsabilidade = load_prazo_tables(prazo_path)
             only_bases = bases_for_owner(responsabilidade, args.responsavel)
@@ -168,7 +192,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     date_stamp = routine.as_of.strftime("%Y-%m-%d")
     excel_path = output_dir / f"backlog_lastmile_{date_stamp}.xlsx"
-    print("Gerando Excel e mensagens…", flush=True)
+    print("Gerando Excel e mensagens...", flush=True)
     _write_excel(routine, excel_path, include_detail=not args.no_detail)
     _write_messages(routine.messages, output_dir / "mensagens_whatsapp")
 

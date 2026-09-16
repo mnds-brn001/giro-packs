@@ -1,8 +1,18 @@
 # Operational extracts — never commit
 monitoramento*.xlsx
+monitoramento*.parquet
 ~$*.xlsx
 output/
 Prazo*.xlsx
+prazo*.xlsx
+data/monitoramento/*
+!data/monitoramento/.gitkeep
+data/parquet/*
+!data/parquet/.gitkeep
+data/prazo/*
+!data/prazo/.gitkeep
+data/entregues/*
+!data/entregues/.gitkeep
 
 # Python
 __pycache__/

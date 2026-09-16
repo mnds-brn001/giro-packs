@@ -82,6 +82,15 @@ def load_lastmile_source(source: str | Path, *, as_of: pd.Timestamp | None = Non
 
     if path.suffix.lower() == ".csv":
         raw = pd.read_csv(path, usecols=usecols)
+    elif path.suffix.lower() in {".parquet", ".pq"}:
+        raw = pd.read_parquet(path)
+        bilingual = [c for c in raw.columns if c in excel_names]
+        if bilingual:
+            raw = raw[bilingual]
+        else:
+            keep = [c for c in raw.columns if c in LAST_MILE_KEYS]
+            if keep:
+                raw = raw[keep]
     else:
         try:
             raw = pd.read_excel(path, engine="calamine", usecols=usecols)
@@ -219,6 +228,29 @@ def _append_grouped_lines(
             lines.append(line_fn(row))
 
 
+def _append_waybill_copy_block(
+    lines: list[str],
+    frame: pd.DataFrame,
+    *,
+    title: str = "AJs para copiar",
+) -> None:
+    """Lista só de waybills, uma por linha — cola no app em lote."""
+    if frame.empty or "waybill" not in frame.columns:
+        return
+    unique: list[str] = []
+    seen: set[str] = set()
+    for raw in frame["waybill"].tolist():
+        bill = _fmt_cell(raw, "")
+        if not bill or bill in seen or bill == "SEM_WAYBILL":
+            continue
+        seen.add(bill)
+        unique.append(bill)
+    if not unique:
+        return
+    lines.extend(["", f"📋 *{title}* ({len(unique)})", ""])
+    lines.extend(unique)
+
+
 def _backlog_message_for_base(base: str, backlog: pd.DataFrame, as_of: pd.Timestamp) -> str:
     """Copy de tratativa: foco na banda crítica de +10 dias (piso + rota)."""
     date_label = as_of.strftime("%d/%m/%Y")
@@ -288,6 +320,7 @@ def _backlog_message_for_base(base: str, backlog: pd.DataFrame, as_of: pd.Timest
             ),
         )
 
+    _append_waybill_copy_block(lines, critical, title="AJs +10d para copiar")
     lines.extend(
         [
             "",
@@ -333,6 +366,7 @@ def _preventivo_message_for_base(
             waybill = _fmt_cell(row.get("waybill"), "SEM_WAYBILL")
             status = _fmt_cell(row.get("status"), "Em rota de entrega")
             lines.append(f"{waybill}\t{status}\t{driver}")
+    _append_waybill_copy_block(lines, due_today, title="AJs vence hoje para copiar")
     lines.extend(
         [
             "",

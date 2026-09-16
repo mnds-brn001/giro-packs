@@ -141,6 +141,13 @@ LABEL = {
     "hub_share_pct": "% tempo HUB",
     "base_share_pct": "% tempo Base",
     "risk_tier": "Nível risco",
+    "cli_atraso_dias": "Atraso cliente (d)",
+    "cli_resultado": "SLA cliente",
+    "lm_atraso_dias": "Atraso last-mile (d)",
+    "lm_resultado": "SLA last-mile",
+    "lm_vencimento": "Venc. last-mile",
+    "responsavel": "Responsável",
+    "first_attempt": "1ª tentativa",
 }
 
 DATETIME_KEYS = [

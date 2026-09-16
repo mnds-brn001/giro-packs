@@ -15,6 +15,7 @@ import pandas as pd
 from .backlog_lastmile import (
     LAST_MILE_KEYS,
     _append_grouped_lines,
+    _append_waybill_copy_block,
     _clean_base,
     _fmt_cell,
     _is_route_status,
@@ -280,6 +281,7 @@ def preventivo_message_for_base(base: str, vence_hoje: pd.DataFrame, as_of: pd.T
             ),
         )
 
+    _append_waybill_copy_block(lines, vence_hoje, title="AJs vence hoje para copiar")
     lines.extend(
         [
             "",

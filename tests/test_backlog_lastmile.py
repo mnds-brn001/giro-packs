@@ -104,6 +104,11 @@ def test_backlog_message_lists_floor_city_and_route_courier(as_of):
     assert "motoristaSMA" in message
     assert "Gravataí" in message
     assert "AJ-RECENTE" not in message
+    assert "AJs +10d para copiar" in message
+    copy_block = message.split("AJs +10d para copiar")[1]
+    assert "AJ-PISO-CRITICO" in copy_block
+    assert "AJ-ROTA-CRITICO" in copy_block
+    assert "\nAJ-PISO-CRITICO\n" in copy_block or copy_block.strip().startswith("AJ-PISO") or "AJ-PISO-CRITICO\n" in copy_block
     assert "PRIORIDADE MÁXIMA" not in message
     assert "PRIORIDADE MÁXIMA" in routine.preventivo_messages["RS-W-D011"]
 
