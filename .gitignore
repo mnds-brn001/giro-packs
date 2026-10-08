@@ -5,6 +5,9 @@ monitoramento*.parquet
 output/
 Prazo*.xlsx
 prazo*.xlsx
+*CONTROLE BACKLOG*
+*控制积压*
+*pacotes parados*
 data/monitoramento/*
 !data/monitoramento/.gitkeep
 data/parquet/*
@@ -13,6 +16,8 @@ data/prazo/*
 !data/prazo/.gitkeep
 data/entregues/*
 !data/entregues/.gitkeep
+data/monitoramento da perda de rastreio/*
+!data/monitoramento da perda de rastreio/.gitkeep
 
 # Python
 __pycache__/

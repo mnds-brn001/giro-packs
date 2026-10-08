@@ -31,6 +31,12 @@ O preventivo ainda aceita `--hq` (RESUMO da matriz) ou `--prazo` (inbound + TIME
 
 O retorno ao hub lê a aba `DADOS` do acompanhamento, parseia origem/hub no rastreio (`saiu de [BASE] … centro de trânsito de [HUB]`) e classifica 0–3 / 4–6 / 7–9 / ≥10.
 
+A perda de rastreio lê o xlsx mais novo de `data/monitoramento da perda de rastreio/` (exportação de pacotes parados). A carteira sai de `data/prazo/`. A data sai do stamp `20YYMMDD` do arquivo quando `--as-of` é omitido. Saída em `output/perda_rastreio_YYYY-MM-DD/`: mensagem da base, resumo do hub e a cauda.
+
+```powershell
+python scripts\generate_perda_rastreio.py
+```
+
 A malha cruza ponto pré-alocado × ponto físico. Ação:
 
 - **Devolver HUB** — no piso, base errada

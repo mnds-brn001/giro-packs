@@ -10,6 +10,7 @@ MONITORAMENTO_DIR = ROOT / "data" / "monitoramento"
 PARQUET_DIR = ROOT / "data" / "parquet"
 PRAZO_DIR = ROOT / "data" / "prazo"
 ENTREGUES_DIR = ROOT / "data" / "entregues"
+PERDA_DIR = ROOT / "data" / "monitoramento da perda de rastreio"
 
 EXPORT_GLOB = "monitoramento*.xlsx"
 PRAZO_GLOB = "*prazo*.xlsx"

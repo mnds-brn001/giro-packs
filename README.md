@@ -10,6 +10,7 @@ CLI para transformar o export de tracking (planilha mestra bilingue) em **pacote
 | **Malha** | Desvio pré-alocado × ponto físico: Devolver HUB / Não entregar / Encaminhar. |
 | **TikTok** | Cobrança cirúrgica (inbound + D0/D+N) com bloco de AJs para copiar. |
 | **Retorno ao hub** | Aging 1–3 / 4–6 / 7–9 / +10. Copy de cobrança física (manifesto vs piso). |
+| **Perda de rastreio** | Controle de backlog (aba DD). Cobrança direta na base onde o bip parou, faixa 20/30/50. |
 
 Não envia WhatsApp. Gera Excel + `.txt` por base para revisão humana.
 
@@ -52,6 +53,9 @@ python scripts\generate_hub_return.py `
   --input "C:\path\to\hub-return.xlsx" `
   --as-of 2026-09-16 `
   --out output\hub_return_2026-09-16
+
+# Perda de rastreio (xlsx em data\monitoramento da perda de rastreio)
+python scripts\generate_perda_rastreio.py
 ```
 
 `--responsavel` filtra a carteira quando o arquivo de prazo está em `data\prazo\` (ou via `--prazo`).
@@ -69,3 +73,4 @@ python -m pytest -q
 - Preventivo e TikTok usam inbound + `TIME DELIVERY DIAS` (D0/D+N), não só `due_at` do marketplace.
 - Sem evidência de manifesto, tratar retorno ao hub como não enviado.
 - Malha é desvio operacional (reencaminhar / devolver), não correção de CEP.
+- Perda de rastreio lê a exportação de pacotes parados. A carteira vem da planilha de prazo, no ponto de parada. Cobra a base de rua na faixa de 20 dias ou mais. Volume parado no hub fica no resumo de transbordo, fora da mensagem da base.
