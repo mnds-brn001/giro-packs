@@ -35,7 +35,7 @@ def _write_excel(routine: LastMileRoutine, destination: Path, *, include_detail:
         "No Piso - Vence Hoje": routine.due_today_floor,
     }
     if include_detail:
-        frames["Backlog Regional"] = routine.regional_backlog
+        frames["SLA Cliente"] = routine.regional_backlog
         delay = pd.to_numeric(routine.regional_backlog.get("delay_days"), errors="coerce")
         if delay is not None and not routine.regional_backlog.empty:
             critico = routine.regional_backlog.loc[delay.fillna(0) > 10]
@@ -191,7 +191,7 @@ def main() -> int:
     output_dir = Path(args.out).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     date_stamp = routine.as_of.strftime("%Y-%m-%d")
-    excel_path = output_dir / f"backlog_lastmile_{date_stamp}.xlsx"
+    excel_path = output_dir / f"backlog_sla_cliente_{date_stamp}.xlsx"
     print("Gerando Excel e mensagens...", flush=True)
     _write_excel(routine, excel_path, include_detail=not args.no_detail)
     _write_messages(routine.messages, output_dir / "mensagens_whatsapp")

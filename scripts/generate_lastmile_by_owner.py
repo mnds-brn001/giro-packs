@@ -119,7 +119,7 @@ def main() -> int:
         f"Parquet torre: {ingest.latest if ingest else '—'}",
         f"Linhas na extracao: {len(tracking)}",
         "",
-        f"{'Responsavel':<24} {'Bases':>6} {'Backlog':>8} {'+10d':>6} {'VENCE HOJE':>10} {'Malha':>6}",
+        f"{'Responsavel':<24} {'Bases':>6} {'Backlog':>8} {'+10d':>6} {'FORA +9d':>10} {'Malha':>6}",
     ]
 
     print("Montando painel de acao de malha...", flush=True)
@@ -159,7 +159,7 @@ def main() -> int:
         if not routine.regional_backlog.empty:
             delay = pd.to_numeric(routine.regional_backlog.get("delay_days"), errors="coerce").fillna(0)
             n_crit = int((delay > 10).sum())
-        backlog_mod._write_excel(routine, folder / f"backlog_lastmile_{stamp}.xlsx")
+        backlog_mod._write_excel(routine, folder / f"backlog_sla_cliente_{stamp}.xlsx")
         backlog_mod._write_messages(routine.messages, folder / "mensagens_whatsapp")
 
         prev = build_preventivo_routine(
@@ -179,7 +179,7 @@ def main() -> int:
         write_mesh_excel(owner_malha, folder / f"malha_acao_{stamp}.xlsx")
 
         index_lines.append(
-            f"{owner:<24} {len(bases):>6} {len(routine.regional_backlog):>8} {n_crit:>6} {len(prev.vence_hoje):>10} {len(owner_malha):>6}"
+            f"{owner:<24} {len(bases):>6} {len(routine.regional_backlog):>8} {n_crit:>6} {len(prev.fora_lm):>10} {len(owner_malha):>6}"
         )
 
     (out_root / "INDEX.txt").write_text("\n".join(index_lines) + "\n", encoding="utf-8")

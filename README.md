@@ -6,7 +6,7 @@ CLI para transformar o export de tracking (planilha mestra bilingue) em **pacote
 |---|---|
 | **Pack do dia** | Backlog + preventivo + malha por responsável + TikTok. Um comando. |
 | **Backlog** | Fila +10 dias: piso por cidade, rota por entregador. Copy de tratativa + AJs para copiar. |
-| **Preventivo** | Vence hoje (inbound + prazo D0/D+N). Copy de encerramento de turno. |
+| **Preventivo** | Cobrança Fora do Prazo LM +9 dias (inbound + prazo D0/D+N). |
 | **Malha** | Desvio pré-alocado × ponto físico: Devolver HUB / Não entregar / Encaminhar. |
 | **TikTok** | Cobrança cirúrgica (inbound + D0/D+N) com bloco de AJs para copiar. |
 | **Retorno ao hub** | Aging 1–3 / 4–6 / 7–9 / +10. Copy de cobrança física (manifesto vs piso). |
@@ -56,6 +56,9 @@ python scripts\generate_hub_return.py `
 
 # Perda de rastreio (xlsx em data\monitoramento da perda de rastreio)
 python scripts\generate_perda_rastreio.py
+
+# Corte D+1 (D0 com inbound depois das 08:00). Não entra no pack. Ver docs/CORTE_8H.md
+python scripts\generate_corte_8h.py --as-of 2026-10-22
 ```
 
 `--responsavel` filtra a carteira quando o arquivo de prazo está em `data\prazo\` (ou via `--prazo`).
@@ -70,7 +73,7 @@ python -m pytest -q
 
 - Fonte: aba de dados da extração (colunas canônicas em `src/columns.py`).
 - Aging e RESUMO são regras determinísticas no código — não Copilot.
-- Preventivo e TikTok usam inbound + `TIME DELIVERY DIAS` (D0/D+N), não só `due_at` do marketplace.
+- Preventivo e TikTok usam inbound + `TIME DELIVERY DIAS` (D0/D+N), não só `due_at` do marketplace. D0 com inbound depois das 08:00 vence no dia seguinte. O HTML desse corte é `scripts/generate_corte_8h.py` e ainda não sai no pack.
 - Sem evidência de manifesto, tratar retorno ao hub como não enviado.
 - Malha é desvio operacional (reencaminhar / devolver), não correção de CEP.
 - Perda de rastreio lê a exportação de pacotes parados. A carteira vem da planilha de prazo, no ponto de parada. Cobra a base de rua na faixa de 20 dias ou mais. Volume parado no hub fica no resumo de transbordo, fora da mensagem da base.

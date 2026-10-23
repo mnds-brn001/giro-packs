@@ -14,7 +14,7 @@ Saída em `output/lastmile_YYYY-MM-DD/`:
 
 - `INDEX.txt` — volume por responsável
 - `<Responsavel>/mensagens_whatsapp/` — backlog (+10d) com bloco `AJs +10d para copiar`
-- `<Responsavel>/mensagens_preventivo/` — vence hoje (inbound + D0/D+N)
+- `<Responsavel>/mensagens_preventivo/` — Fora do Prazo LM +9 dias (inbound + D0/D+N)
 - `<Responsavel>/malha_acao_*.xlsx` — recorte da carteira
 - `malha_acao/painel_malha_*.xlsx` — painel completo
 - `tiktok_sla/mensagens_whatsapp/` — FORA / VENCE HOJE + `AJs TikTok para copiar`
@@ -28,6 +28,14 @@ Os geradores soltos leem Excel/Parquet e gravam `output/<rotina>_<data>/`:
 - `TODAS_AS_BASES.txt` — concatenado para revisão
 
 O preventivo ainda aceita `--hq` (RESUMO da matriz) ou `--prazo` (inbound + TIME DELIVERY DIAS). Marketplace `due_at` sozinho subestima “vence hoje”.
+
+Cidade D0 com inbound depois das 08:00 vence no dia seguinte. O HTML que conta esse corte não sai no pack:
+
+```powershell
+python scripts\generate_corte_8h.py --as-of YYYY-MM-DD
+```
+
+Regra, números e o ponto de encaixe no pack estão em `docs/CORTE_8H.md`.
 
 O retorno ao hub lê a aba `DADOS` do acompanhamento, parseia origem/hub no rastreio (`saiu de [BASE] … centro de trânsito de [HUB]`) e classifica 0–3 / 4–6 / 7–9 / ≥10.
 

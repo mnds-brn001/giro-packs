@@ -215,6 +215,14 @@ def stamp_from_controle(path: str | Path) -> str | None:
     return None
 
 
+def clock_from_controle(path: str | Path) -> str | None:
+    """Hora ``HHMM`` do stamp ``20YYMMDDHHMMSS``, quando o nome traz o relógio."""
+    match = re.search(r"20\d{6}(\d{2})(\d{2})\d{2}", Path(path).name)
+    if not match:
+        return None
+    return f"{match.group(1)}{match.group(2)}"
+
+
 def _hub_nome(texto: str) -> str:
     match = re.search(r"centro de trânsito de \[([^\]]+)\]", texto, flags=re.IGNORECASE)
     return match.group(1) if match else "o hub"

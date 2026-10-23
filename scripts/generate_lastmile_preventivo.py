@@ -1,4 +1,4 @@
-r"""Gera o preventivo Last Mile: RESUMO da matriz + copy de vencendo hoje.
+r"""Gera o preventivo Last Mile: RESUMO da matriz + copy de Fora do Prazo LM +9d.
 
 Exemplo:
     python scripts/generate_lastmile_preventivo.py ^
@@ -40,11 +40,43 @@ def _safe_filename(name: str) -> str:
 def _write_excel(routine: PreventivoRoutine, destination: Path) -> None:
     vence_cols = [
         c
-        for c in ("base", "waybill", "status", "courier", "dest_city", "last_track", "resumo")
+        for c in (
+            "base",
+            "waybill",
+            "status",
+            "courier",
+            "dest_city",
+            "last_track",
+            "issue_reason",
+            "base_inbound",
+            "lm_dias",
+            "corte_8h",
+            "lm_vencimento",
+            "resumo",
+        )
         if c in routine.vence_hoje.columns
+    ]
+    fora_cols = [
+        c
+        for c in (
+            "base",
+            "waybill",
+            "status",
+            "courier",
+            "dest_city",
+            "last_track",
+            "issue_reason",
+            "base_inbound",
+            "lm_dias",
+            "corte_8h",
+            "dias_fora",
+            "resumo",
+        )
+        if c in routine.fora_lm.columns
     ]
     frames = {
         "Dinamica RESUMO": routine.pivot,
+        "Fora LM +9d": routine.fora_lm[fora_cols] if fora_cols else routine.fora_lm,
         "Vence Hoje": routine.vence_hoje[vence_cols] if vence_cols else routine.vence_hoje,
         "BD + RESUMO": routine.detail,
     }
@@ -79,7 +111,7 @@ def _write_messages(messages: dict[str, str], messages_dir: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Preventivo Last Mile: PROCV do RESUMO da matriz + copy de VENCE HOJE."
+        description="Preventivo Last Mile: RESUMO por inbound + copy de Fora do Prazo LM +9d."
     )
     parser.add_argument(
         "--bd",
@@ -165,6 +197,7 @@ def main() -> int:
     print(f"OK: {excel_path}")
     print(f"  Linhas BD: {len(routine.detail)}")
     print(f"  VENCE HOJE: {len(routine.vence_hoje)}")
+    print(f"  FORA LM +9d: {len(routine.fora_lm)}")
     print(f"  Mensagens: {len(routine.messages)}")
     return 0
 

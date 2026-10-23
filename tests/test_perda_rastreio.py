@@ -11,6 +11,7 @@ from src.perda_rastreio import (
     map_perda_columns,
     normalize_perda,
     resolve_perda_rastreio,
+    clock_from_controle,
     stamp_from_controle,
 )
 
@@ -53,6 +54,9 @@ def test_resolve_perda_rastreio_pega_o_xlsx_da_pasta(tmp_path):
 
 def test_stamp_from_controle_le_data_do_nome():
     assert stamp_from_controle("控制积压CONTROLE BACKLOG SUL 06.10.2026_18H00.xlsx") == "2026-10-06"
+    name = "Exportação de Monitoramento de quantidade de pacotes parados-20261008111923193-ycS0UP.xlsx"
+    assert stamp_from_controle(name) == "2026-10-08"
+    assert clock_from_controle(name) == "1119"
 
 
 def _frame() -> pd.DataFrame:

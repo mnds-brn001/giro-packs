@@ -1,7 +1,8 @@
-"""Preventivo Last Mile — RESUMO da matriz + copy de vencendo hoje.
+"""Preventivo Last Mile — RESUMO da matriz + cobrança Fora do Prazo LM.
 
 Replica o PROCV da aba BD contra o cálculo do analista (coluna Resumo Prazo)
-e monta a cobrança visual da dinâmica: entregador na rota, cidade no piso.
+e monta a cobrança da faixa crítica: Fora do Prazo LM com +9 dias.
+A dinâmica da relação continua entregador na rota e cidade no piso.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from .columns import COL
 RESUMO_VENCE_HOJE = "VENCE HOJE / 赢在今天"
 RESUMO_FORA = "FORA DO PRAZO / 截止日期后"
 RESUMO_DEPOIS = "VENCE DEPOIS / 稍後獲勝"
+FORA_MIN_DAYS = 9
 
 PREVENTIVO_KEYS = LAST_MILE_KEYS + ("last_track", "dest_state")
 
@@ -35,6 +37,7 @@ class PreventivoRoutine:
     detail: pd.DataFrame
     pivot: pd.DataFrame
     vence_hoje: pd.DataFrame
+    fora_lm: pd.DataFrame
     messages: dict[str, str]
 
 
@@ -142,7 +145,8 @@ def apply_inbound_resumo(bd: pd.DataFrame, prazo_lookup: pd.DataFrame, as_of: pd
     work = bd.copy()
     if "base_inbound" not in work.columns:
         raise ValueError("A extração precisa da coluna de inbound no ponto para calcular o RESUMO.")
-    inbound = pd.to_datetime(work["base_inbound"], errors="coerce").dt.normalize()
+    inbound_ts = pd.to_datetime(work["base_inbound"], errors="coerce")
+    inbound = inbound_ts.dt.normalize()
     city_n = work.get("dest_city", pd.Series("", index=work.index)).astype("string").str.strip().str.casefold()
     state_n = work.get("dest_state", pd.Series("", index=work.index)).astype("string").str.strip().str.upper()
     base_n = work.get("last_point", work.get("entry_point", pd.Series("", index=work.index)))
@@ -159,15 +163,22 @@ def apply_inbound_resumo(bd: pd.DataFrame, prazo_lookup: pd.DataFrame, as_of: pd
         fb = keys.merge(by_city, on=["dest_state", "dest_city_n"], how="left")["lm_dias"]
         dias = dias.fillna(fb)
     dias = pd.Series(dias.to_numpy(), index=work.index)
+    # D0 só vale no mesmo dia se o inbound foi até 08:00. Depois disso o prazo é D+1.
+    after_cut = (inbound_ts - inbound).gt(pd.Timedelta(hours=8)).fillna(False)
+    corte = dias.eq(0) & after_cut
+    efetivo = dias.where(~corte, 1)
 
-    venc = inbound + pd.to_timedelta(dias.fillna(0), unit="D")
+    venc = inbound + pd.to_timedelta(efetivo.fillna(0), unit="D")
     reference = pd.Timestamp(as_of).normalize()
     resumo = pd.Series(RESUMO_DEPOIS, index=work.index, dtype="string")
     resumo = resumo.mask(venc < reference, RESUMO_FORA)
     resumo = resumo.mask(venc.eq(reference), RESUMO_VENCE_HOJE)
     resumo = resumo.mask(inbound.isna() | dias.isna(), pd.NA)
     work["lm_dias"] = dias
+    work["corte_8h"] = pd.Series(pd.NA, index=work.index, dtype="string")
+    work.loc[corte, "corte_8h"] = "D+1"
     work["lm_vencimento"] = venc
+    work["dias_fora"] = (reference - venc).dt.days
     work["resumo"] = resumo
     return work
 
@@ -226,35 +237,55 @@ def _pivot_resumo(detail: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def preventivo_message_for_base(base: str, vence_hoje: pd.DataFrame, as_of: pd.Timestamp) -> str:
-    """Copy de cobrança do vencendo hoje: rota=entregador, piso=cidade."""
+def _dias_fora_series(work: pd.DataFrame, reference: pd.Timestamp) -> pd.Series:
+    """Dias além do vencimento de last mile. Positivo = fora do prazo."""
+    if "lm_vencimento" in work.columns:
+        venc = pd.to_datetime(work["lm_vencimento"], errors="coerce").dt.normalize()
+        computed = (pd.Timestamp(reference).normalize() - venc).dt.days
+        if "dias_fora" in work.columns:
+            return computed.fillna(pd.to_numeric(work["dias_fora"], errors="coerce"))
+        return computed
+    if "dias_fora" in work.columns:
+        return pd.to_numeric(work["dias_fora"], errors="coerce")
+    return pd.Series(pd.NA, index=work.index, dtype="Float64")
+
+
+def _dias_label(val) -> str:
+    days = pd.to_numeric(val, errors="coerce")
+    if pd.isna(days):
+        return "s/dias"
+    return f"{int(days)}d"
+
+
+def preventivo_message_for_base(base: str, fora_lm: pd.DataFrame, as_of: pd.Timestamp) -> str:
+    """Copy de cobrança: só Fora do Prazo LM com +9 dias. Rota=entregador, piso=cidade."""
     date_label = as_of.strftime("%d/%m/%Y")
-    status = vence_hoje["status"] if "status" in vence_hoje.columns else pd.Series("", index=vence_hoje.index)
-    route = vence_hoje.loc[status.map(_is_route_status)]
-    floor = vence_hoje.loc[~status.map(_is_route_status)]
+    status = fora_lm["status"] if "status" in fora_lm.columns else pd.Series("", index=fora_lm.index)
+    route = fora_lm.loc[status.map(_is_route_status)]
+    floor = fora_lm.loc[~status.map(_is_route_status)]
 
     lines = [
-        "🚨 *PRIORIDADE MÁXIMA – ENCERRAMENTO DE TURNO E SLA HOJE*",
+        "🚨 *FORA DO PRAZO LM — BAIXA E TRATATIVA*",
         "",
         f"Base: *{base}* | Referência: *{date_label}*",
-        f"VENCE HOJE: *{len(vence_hoje)}*  (em rota: {len(route)} · no piso: {len(floor)})",
+        f"Fora do prazo LM +{FORA_MIN_DAYS}d: *{len(fora_lm)}*  (em rota: {len(route)} · no piso: {len(floor)})",
         "",
         "Pessoal, boa tarde.",
         "",
-        "Mapeamos os pedidos com vencimento limite para HOJE. Precisamos da garantia de baixa ou conclusão de entrega ainda no turno de hoje para evitar estouro de SLA na base.",
+        "Analisando os pedidos *Fora do Prazo LM*, identifico os seguintes pedidos pendentes de baixa / tratativa. "
+        f"O recorte é de *+{FORA_MIN_DAYS} dias* ou mais além do prazo de last mile.",
+        "",
+        "Conto com o apoio da base para eliminarmos estas pendências.",
+        "",
+        "Segue a relação:",
     ]
 
     if route.empty and floor.empty:
-        lines.extend(
-            [
-                "",
-                "Não há pacote vencendo hoje nesta extração.",
-            ]
-        )
+        lines.extend(["", "Não há pacote Fora do Prazo LM nesta faixa nesta extração."])
         return "\n".join(lines)
 
     if not route.empty:
-        lines.extend(["", "⚠️ *EM ROTA — prioridade total nos AJs abaixo:*"])
+        lines.extend(["", "🚚 *EM ROTA*"])
         _append_grouped_lines(
             lines,
             route,
@@ -263,12 +294,13 @@ def preventivo_message_for_base(base: str, vence_hoje: pd.DataFrame, as_of: pd.T
             line_fn=lambda row: (
                 f"{_fmt_cell(row.get('waybill'), 'SEM_WAYBILL')}\t"
                 f"{_fmt_cell(row.get('last_track'), _fmt_cell(row.get('status'), 'Em rota de entrega'))}\t"
-                f"{_fmt_cell(row.get('courier'), 'SEM MOTORISTA')}"
+                f"{_fmt_cell(row.get('courier'), 'SEM MOTORISTA')}\t"
+                f"{_dias_label(row.get('dias_fora'))}"
             ),
         )
 
     if not floor.empty:
-        lines.extend(["", "📦 *NO PISO — vencendo HOJE, atualizar movimentação:*"])
+        lines.extend(["", "📦 *NO PISO*"])
         _append_grouped_lines(
             lines,
             floor,
@@ -277,15 +309,17 @@ def preventivo_message_for_base(base: str, vence_hoje: pd.DataFrame, as_of: pd.T
             line_fn=lambda row: (
                 f"{_fmt_cell(row.get('waybill'), 'SEM_WAYBILL')}\t"
                 f"{_fmt_cell(row.get('status'), 'No piso')}\t"
-                f"{_fmt_cell(row.get('dest_city'), 'SEM CIDADE')}"
+                f"{_fmt_cell(row.get('dest_city'), 'SEM CIDADE')}\t"
+                f"{_dias_label(row.get('dias_fora'))}"
             ),
         )
 
-    _append_waybill_copy_block(lines, vence_hoje, title="AJs vence hoje para copiar")
+    _append_waybill_copy_block(lines, fora_lm, title="AJs fora do prazo LM para copiar")
     lines.extend(
         [
             "",
-            "📌 Ação necessária: alinhamento imediato com os motoristas para garantia de baixa no app até o fechamento. Contamos com o empenho da base para fechar o dia sem pendências! 🚚📦",
+            "📌 Ação necessária: localizar, atualizar a movimentação e finalizar (baixa no app ou tratativa válida). "
+            "Contamos com o empenho da base para eliminar estas pendências.",
         ]
     )
     return "\n".join(lines)
@@ -299,7 +333,11 @@ def build_preventivo_routine(
     prazo_lookup: pd.DataFrame | None = None,
     only_bases: list[str] | None = None,
 ) -> PreventivoRoutine:
-    """Junta a extração + RESUMO (HQ ou inbound+D0/D+N) e gera a fila de VENCE HOJE."""
+    """Junta a extração + RESUMO e gera a cobrança de Fora do Prazo LM +9 dias.
+
+    ``vence_hoje`` continua no detalhe para conferência. A mensagem de WhatsApp
+    leva só quem já estourou o prazo de last mile em ``FORA_MIN_DAYS`` ou mais.
+    """
     reference = pd.Timestamp(as_of or pd.Timestamp.now()).normalize()
     work = bd.copy()
     if prazo_lookup is not None:
@@ -312,6 +350,7 @@ def build_preventivo_routine(
         )
 
     work["resumo"] = _normalize_resumo(work["resumo"])
+    work["dias_fora"] = _dias_fora_series(work, reference)
     base_series = work["last_point"] if "last_point" in work.columns else work.get("entry_point")
     if base_series is None:
         raise ValueError("BD sem último ponto de rastreio nem ponto de entrada.")
@@ -332,22 +371,32 @@ def build_preventivo_routine(
             "last_track",
             "last_point",
             "entry_point",
+            "base_inbound",
+            "issue_reason",
             "due_at",
             "lm_dias",
+            "corte_8h",
             "lm_vencimento",
+            "dias_fora",
         )
         if c in work.columns
     ]
     detail = work[detail_cols].rename(columns={"_base": "base"})
     vence = work.loc[work["resumo"].eq(RESUMO_VENCE_HOJE)].copy()
+    fora = work.loc[
+        work["resumo"].eq(RESUMO_FORA) & work["dias_fora"].ge(FORA_MIN_DAYS)
+    ].copy()
+    if not fora.empty:
+        fora = fora.sort_values(["dias_fora", "waybill"], ascending=[False, True], na_position="last")
     messages = {
         base: preventivo_message_for_base(base, group, reference)
-        for base, group in vence.groupby("_base", dropna=False, sort=True)
+        for base, group in fora.groupby("_base", dropna=False, sort=True)
     }
     return PreventivoRoutine(
         as_of=reference,
         detail=detail,
         pivot=_pivot_resumo(work),
         vence_hoje=vence.rename(columns={"_base": "base"}),
+        fora_lm=fora.rename(columns={"_base": "base"}),
         messages=messages,
     )

@@ -69,6 +69,29 @@ def test_routine_groups_backlog_into_disjoint_age_buckets(as_of):
     assert summary["Total Geral"] == 4
 
 
+def test_backlog_detail_carries_delay_band(as_of):
+    rows = [
+        make_raw_row(
+            waybill="AJ-16",
+            delay_days=16,
+            entry_point="RS-W-D027",
+            base_inbound="2026-07-01 09:30:00",
+        ),
+        make_raw_row(waybill="AJ-11", delay_days=11, entry_point="RS-W-D027"),
+        make_raw_row(waybill="AJ-06", delay_days=6, entry_point="RS-W-D027"),
+        make_raw_row(waybill="AJ-02", delay_days=2, entry_point="RS-W-D027"),
+    ]
+    routine = build_lastmile_routine(enrich(pd.DataFrame(rows), as_of=as_of), as_of=as_of)
+    bands = dict(zip(routine.regional_backlog["waybill"], routine.regional_backlog["faixa_atraso"]))
+
+    assert bands["AJ-16"] == ">15 dias"
+    assert bands["AJ-11"] == "10-15 dias"
+    assert bands["AJ-06"] == "5-10 dias"
+    assert bands["AJ-02"] == "≤5 dias"
+    inbound = routine.regional_backlog.loc[routine.regional_backlog["waybill"].eq("AJ-16"), "base_inbound"].iloc[0]
+    assert pd.notna(inbound)
+
+
 def test_backlog_message_lists_floor_city_and_route_courier(as_of):
     rows = [
         make_raw_row(

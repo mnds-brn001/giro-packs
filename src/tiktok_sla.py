@@ -20,12 +20,21 @@ def filter_tiktok(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _line_aj(row: pd.Series, *, extra: str) -> str:
-    return (
-        f"{_fmt_cell(row.get('waybill'), 'SEM_WAYBILL')}\t"
-        f"{_fmt_cell(row.get('dest_city'), '—')}\t"
-        f"{_fmt_cell(row.get('courier'), 'sem motorista')}\t"
-        f"{extra}"
-    )
+    city = _fmt_cell(row.get("dest_city"), "—")
+    parts = [
+        _fmt_cell(row.get("waybill"), "SEM_WAYBILL"),
+        city,
+        _fmt_cell(row.get("courier"), "sem motorista"),
+    ]
+    extra_text = str(extra).strip()
+    if extra_text and extra_text.casefold() != city.casefold():
+        parts.append(extra_text)
+    return "\t".join(parts)
+
+
+def closed_loop_due_today(series: pd.Series, as_of: pd.Timestamp) -> pd.Series:
+    due = pd.to_datetime(series, errors="coerce").dt.normalize()
+    return due.eq(pd.Timestamp(as_of).normalize()).fillna(False)
 
 
 def tiktok_message(base: str, group: pd.DataFrame, as_of: pd.Timestamp) -> str:
@@ -103,6 +112,51 @@ def tiktok_message(base: str, group: pd.DataFrame, as_of: pd.Timestamp) -> str:
             "📌 Sem resposta no AJ = tratar como parado. Cliente em evidência hoje — não deixar virar D+1.",
         ]
     )
+    return "\n".join(lines)
+
+
+def tiktok_ciclo_message(base: str, group: pd.DataFrame, as_of: pd.Timestamp) -> str:
+    """Cobrança só do que fecha o ciclo do cliente neste dia."""
+    date_label = as_of.strftime("%d/%m/%Y")
+    due = group.loc[closed_loop_due_today(group["closed_loop_at"], as_of)].copy()
+    due = due.sort_values(["status", "courier", "waybill"], na_position="last")
+    lines = [
+        "🎯 *TIKTOK – CICLO DO CLIENTE FECHA HOJE*",
+        "",
+        f"Base: *{base}* | {date_label}",
+        f"Fecha o ciclo hoje: *{len(due)}*",
+        "",
+        "Cliente: *tiktok logistics brazil ltda*",
+        "Recorte da coluna de ciclo fechado. Sem baixa no dia, o cliente conta como estouro. Separado do SLA de last mile.",
+        "",
+        "Até *18h*, para cada AJ abaixo: entregue / previsão de baixa / impedimento (1 linha).",
+    ]
+    if due.empty:
+        lines.extend(["", "Nenhum AJ fecha o ciclo neste dia."])
+        return "\n".join(lines)
+
+    route = due.loc[due["status"].map(_is_route_status)]
+    floor = due.loc[~due["status"].map(_is_route_status)]
+    if not floor.empty:
+        lines.append("\n_No piso_")
+        _append_grouped_lines(
+            lines,
+            floor,
+            group_key="dest_city",
+            empty_group="SEM CIDADE",
+            line_fn=lambda row: _line_aj(row, extra=_fmt_cell(row.get("status"), "piso")),
+        )
+    if not route.empty:
+        lines.append("\n_Em rota_")
+        _append_grouped_lines(
+            lines,
+            route,
+            group_key="courier",
+            empty_group="SEM MOTORISTA",
+            line_fn=lambda row: _line_aj(row, extra=_fmt_cell(row.get("status"), "em rota")),
+        )
+    _append_waybill_copy_block(lines, due, title="AJs ciclo hoje para copiar")
+    lines.extend(["", "📌 Sem resposta no AJ = tratar como parado. O ciclo do cliente fecha hoje."])
     return "\n".join(lines)
 
 

@@ -32,6 +32,7 @@ PAINEL_COLS = (
     "Ponto Certo",
     "Ação Requerida",
     "Prioridade",
+    "Motivo ocorrência",
 )
 
 
@@ -126,6 +127,10 @@ def build_mesh_action(
     work["Waybill"] = work["waybill"].astype("string").str.strip()
     work["Cidade"] = work["dest_city"].astype("string").str.strip() if "dest_city" in work.columns else ""
     work["Status"] = status.astype("string").str.strip()
+    if "issue_reason" in work.columns:
+        work["Motivo ocorrência"] = work["issue_reason"].astype("string").str.strip()
+    else:
+        work["Motivo ocorrência"] = ""
 
     if responsabilidade is not None and not responsabilidade.empty:
         resp = responsabilidade.copy()

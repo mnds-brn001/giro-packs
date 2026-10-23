@@ -42,6 +42,7 @@ DETAIL_COLUMNS = (
     "waybill",
     "status",
     "due_at",
+    "base_inbound",
     "entry_point",
     "last_point",
     "courier",
@@ -49,6 +50,7 @@ DETAIL_COLUMNS = (
     "last_track",
     "issue_reason",
     "delay_days",
+    "faixa_atraso",
     "dest_city",
 )
 
@@ -158,6 +160,16 @@ def _to_detail(df: pd.DataFrame) -> pd.DataFrame:
     columns = ["_base", *[column for column in DETAIL_COLUMNS if column in df.columns]]
     detail = df[columns].copy().rename(columns={"_base": "base"})
     return detail
+
+
+def delay_band(delay: pd.Series) -> pd.Series:
+    """Faixas do resumo por base. ≤5 inclui o que o cabeçalho antigo chama de 'menos de 4'."""
+    days = pd.to_numeric(delay, errors="coerce").fillna(0)
+    band = pd.Series("≤5 dias", index=delay.index, dtype="string")
+    band = band.mask(days.gt(5) & days.le(10), "5-10 dias")
+    band = band.mask(days.gt(10) & days.le(15), "10-15 dias")
+    band = band.mask(days.gt(15), ">15 dias")
+    return band
 
 
 def _backlog_summary(backlog: pd.DataFrame) -> pd.DataFrame:
@@ -414,6 +426,7 @@ def build_lastmile_routine(
 
     base_col = _base_column(work)
     work["_base"] = _clean_base(work[base_col])
+    work["faixa_atraso"] = delay_band(work["delay_days"]) if "delay_days" in work.columns else pd.Series(pd.NA, index=work.index, dtype="string")
     if only_bases:
         allowed = {str(b).strip() for b in only_bases}
         work = work.loc[work["_base"].isin(allowed)].copy()

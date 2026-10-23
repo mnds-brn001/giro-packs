@@ -137,12 +137,13 @@ def test_painel_has_no_sla_metrics():
     detail = build_mesh_action(pd.DataFrame([_row()]), as_of=pd.Timestamp("2026-09-12"))
     painel = painel_acao(detail, com_filtro=False)
     assert list(painel.columns) == [
-        "Waybill",
-        "Base Atual",
-        "Ponto Certo",
-        "Ação Requerida",
-        "Prioridade",
-    ]
+            "Waybill",
+            "Base Atual",
+            "Ponto Certo",
+            "Ação Requerida",
+            "Prioridade",
+            "Motivo ocorrência",
+        ]
     assert "delay_days" not in painel.columns
 
 

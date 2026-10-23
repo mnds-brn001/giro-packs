@@ -25,6 +25,7 @@ from src.perda_rastreio import (
     MIN_BASE,
     build_perda_rastreio,
     load_perda_rastreio,
+    clock_from_controle,
     resolve_perda_rastreio,
     stamp_from_controle,
 )
@@ -126,7 +127,9 @@ def main() -> int:
         print(f"ERRO: {exc}", file=sys.stderr)
         return 1
 
-    out = Path(args.out).expanduser() if args.out else ROOT / "output" / f"perda_rastreio_{corte.strftime('%Y-%m-%d')}"
+    clock = clock_from_controle(source)
+    folder = f"perda_rastreio_{corte.strftime('%Y-%m-%d')}" + (f"_{clock}" if clock else "")
+    out = Path(args.out).expanduser() if args.out else ROOT / "output" / folder
     out.mkdir(parents=True, exist_ok=True)
     excel = out / f"perda_rastreio_{corte.strftime('%Y-%m-%d')}.xlsx"
     _write_excel(routine, excel)
