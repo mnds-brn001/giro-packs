@@ -131,12 +131,41 @@ def load_prazo_tables(source: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     raw_resp = _read_excel(path, sheet_name=resp_sheet)
     raw_resp.columns = [str(c).strip() for c in raw_resp.columns]
-    resp = pd.DataFrame(
-        {
-            "base": raw_resp.iloc[:, 0].astype("string").str.strip(),
-            "responsavel": raw_resp.iloc[:, 1].astype("string").str.strip(),
-        }
-    ).dropna(subset=["base"])
+    cols = list(raw_resp.columns)
+    owner_col = next((c for c in cols if "responsab" in c.lower() or "责任" in c), None)
+    base_col_resp = next(
+        (
+            c
+            for c in cols
+            if c != owner_col
+            and any(tok in c.lower() for tok in ("pré-entrega", "pre-entrega", "ponto", "base", "网点"))
+        ),
+        cols[0],
+    )
+    if owner_col is None:
+        owner_col = cols[1] if len(cols) > 1 else cols[0]
+    payload = {
+        "base": raw_resp[base_col_resp].astype("string").str.strip(),
+        "responsavel": raw_resp[owner_col].astype("string").str.strip(),
+    }
+    tipo_col = next(
+        (
+            c
+            for c in cols
+            if c not in {owner_col, base_col_resp} and ("opera" in c.lower() or "操作" in c)
+        ),
+        None,
+    )
+    uf_col = next((c for c in cols if str(c).strip().upper() == "UF"), None)
+    sac_col = next((c for c in cols if str(c).strip().upper() == "SAC"), None)
+    if tipo_col is not None:
+        payload["tipo_operacao"] = raw_resp[tipo_col].astype("string").str.strip()
+    if uf_col is not None:
+        payload["uf"] = raw_resp[uf_col].astype("string").str.strip()
+    if sac_col is not None:
+        payload["sac"] = raw_resp[sac_col].astype("string").str.strip()
+    resp = pd.DataFrame(payload).dropna(subset=["base"])
+    resp = resp.loc[~resp["base"].isin(["", "nan", "None", "<NA>"])]
     return lookup, resp
 
 

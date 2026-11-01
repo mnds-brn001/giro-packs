@@ -11,6 +11,7 @@ CLI para transformar o export de tracking (planilha mestra bilingue) em **pacote
 | **TikTok** | Cobrança cirúrgica (inbound + D0/D+N) com bloco de AJs para copiar. |
 | **Retorno ao hub** | Aging 1–3 / 4–6 / 7–9 / +10. Copy de cobrança física (manifesto vs piso). |
 | **Perda de rastreio** | Controle de backlog (aba DD). Cobrança direta na base onde o bip parou, faixa 20/30/50. |
+| **Performance SLA** | O que vencia no dia: dentro do prazo, em aberto ou fora. Uma DIN por responsável. |
 
 Não envia WhatsApp. Gera Excel + `.txt` por base para revisão humana.
 
@@ -59,6 +60,10 @@ python scripts\generate_perda_rastreio.py
 
 # Corte D+1 (D0 com inbound depois das 08:00). Não entra no pack. Ver docs/CORTE_8H.md
 python scripts\generate_corte_8h.py --as-of 2026-10-22
+
+# Performance SLA. Larga o xlsx em data\entregues e roda sem caminho.
+# DIN de quem vence no dia + auditoria da extração inteira, uma pasta por responsável.
+python scripts\generate_performance_sla.py --dia 2026-10-31
 ```
 
 `--responsavel` filtra a carteira quando o arquivo de prazo está em `data\prazo\` (ou via `--prazo`).
@@ -73,7 +78,8 @@ python -m pytest -q
 
 - Fonte: aba de dados da extração (colunas canônicas em `src/columns.py`).
 - Aging e RESUMO são regras determinísticas no código — não Copilot.
-- Preventivo e TikTok usam inbound + `TIME DELIVERY DIAS` (D0/D+N), não só `due_at` do marketplace. D0 com inbound depois das 08:00 vence no dia seguinte. O HTML desse corte é `scripts/generate_corte_8h.py` e ainda não sai no pack.
+- Preventivo, TikTok e a performance do dia usam inbound + `TIME DELIVERY DIAS` (D0/D+N), não só `due_at` do marketplace. D0 com inbound depois das 08:00 vence no dia seguinte. O HTML desse corte é `scripts/generate_corte_8h.py` e ainda não sai no pack.
+- A performance do dia lê a coluna `TIPO DE OPERAÇÃO` da responsabilidade (DSP, franquia, hub). O arquivo `Responsabilidade *.xlsx` entra em `data\prazo\` mesmo sem a palavra prazo no nome.
 - Sem evidência de manifesto, tratar retorno ao hub como não enviado.
 - Malha é desvio operacional (reencaminhar / devolver), não correção de CEP.
 - Perda de rastreio lê a exportação de pacotes parados. A carteira vem da planilha de prazo, no ponto de parada. Cobra a base de rua na faixa de 20 dias ou mais. Volume parado no hub fica no resumo de transbordo, fora da mensagem da base.

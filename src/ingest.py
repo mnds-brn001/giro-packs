@@ -62,11 +62,15 @@ def _newest(paths: list[Path]) -> Path | None:
 def _prazo_files(folder: Path) -> list[Path]:
     if not folder.is_dir():
         return []
-    return [
-        path
-        for path in folder.glob("*.xlsx")
-        if "prazo" in path.name.lower() and not path.name.startswith("~$")
-    ]
+    needles = ("prazo", "responsab", "责任")
+    found: list[Path] = []
+    for path in folder.glob("*.xlsx"):
+        if path.name.startswith("~$"):
+            continue
+        name = path.name
+        if any(needle in name.lower() or needle in name for needle in needles):
+            found.append(path)
+    return found
 
 
 def resolve_monitoramento(
