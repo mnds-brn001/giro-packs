@@ -41,14 +41,47 @@ class PreventivoRoutine:
     messages: dict[str, str]
 
 
-def _read_excel(path: Path, *, sheet_name=0, usecols=None) -> pd.DataFrame:
-    kwargs: dict = {"sheet_name": sheet_name}
+def _read_excel(path: Path, *, sheet_name=0, usecols=None, header=0) -> pd.DataFrame:
+    kwargs: dict = {"sheet_name": sheet_name, "header": header}
     if usecols is not None:
         kwargs["usecols"] = usecols
     try:
         return pd.read_excel(path, engine="calamine", **kwargs)
     except (ValueError, ImportError, Exception):
         return pd.read_excel(path, **kwargs)
+
+
+def _excel_sheets(path: Path) -> list[str]:
+    try:
+        return list(pd.ExcelFile(path, engine="calamine").sheet_names)
+    except (ValueError, ImportError, Exception):
+        return list(pd.ExcelFile(path).sheet_names)
+
+
+def _pick_named_sheet(names: list[str], pred) -> str | None:
+    return next((name for name in names if pred(name)), None)
+
+
+def _find_header(columns, *needles: str) -> str | None:
+    for col in columns:
+        folded = str(col).casefold()
+        if any(needle.casefold() in folded for needle in needles):
+            return col
+    return None
+
+
+def _as_text(series: pd.Series) -> pd.Series:
+    def cell(value: object) -> object:
+        if pd.isna(value):
+            return pd.NA
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+        text = str(value).strip()
+        return pd.NA if text in {"", "nan", "None", "<NA>"} else text
+
+    return series.map(cell).astype("string")
 
 
 def _pick_sheet(path: Path, preferred: tuple[str, ...]) -> str:
@@ -106,34 +139,55 @@ def load_preventivo_bd(source: str | Path) -> pd.DataFrame:
     return work
 
 
-def load_prazo_tables(source: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Lê prazo D0/D+N por cidade e a carteira de responsabilidade por base."""
-    path = Path(source)
-    xl = pd.ExcelFile(path, engine="calamine")
-    names = xl.sheet_names
-    prazo_sheet = next((n for n in names if "Last Mile" in n or "时效" in n), names[min(2, len(names) - 1)])
-    resp_sheet = next((n for n in names if "RESPONSABILIDADE" in n.upper() or "责任" in n), names[1] if len(names) > 1 else names[0])
+@dataclass(frozen=True)
+class PrazoBook:
+    """Prazo por cidade, carteira por base, etapa do rastreio e assistentes."""
 
-    raw_prazo = _read_excel(path, sheet_name=prazo_sheet)
-    raw_prazo.columns = [str(c).strip() for c in raw_prazo.columns]
-    state_col = next(c for c in raw_prazo.columns if c.lower().startswith("state"))
-    city_col = next(c for c in raw_prazo.columns if "city" in c.lower())
-    base_col = next((c for c in raw_prazo.columns if "base" in c.lower() or "code" in c.lower()), raw_prazo.columns[3])
-    dias_col = next(c for c in raw_prazo.columns if "dias" in c.lower() or c.upper() == "TIME DELIVERY DIAS")
+    lookup: pd.DataFrame
+    responsabilidade: pd.DataFrame
+    etapa: pd.DataFrame
+    assistentes: pd.DataFrame
+
+
+_EMPTY_ETAPA = ("ultimo_rastreio", "etapa")
+_EMPTY_ASSISTENTES = ("assistente", "demanda", "demanda_extra")
+
+
+def _is_carteira_sheet(name: str) -> bool:
+    upper = name.upper()
+    if "ETAPA" in upper:
+        return False
+    return "RESPONSABILIDADE" in upper or "责任" in name
+
+
+def _load_lookup(path: Path, sheet: str) -> pd.DataFrame:
+    raw = _read_excel(path, sheet_name=sheet)
+    raw.columns = [str(c).strip() for c in raw.columns]
+    state_col = next(c for c in raw.columns if c.lower().startswith("state"))
+    city_col = next(c for c in raw.columns if "city" in c.lower())
+    base_col = next((c for c in raw.columns if "base" in c.lower() or "code" in c.lower()), raw.columns[3])
+    dias_col = next(c for c in raw.columns if "dias" in c.lower() or c.upper() == "TIME DELIVERY DIAS")
+    contato_col = _find_header(raw.columns, "responsible", "contato")
+    fone_col = _find_header(raw.columns, "phone", "telefone", "fone", "电话")
     lookup = pd.DataFrame(
         {
-            "dest_state": raw_prazo[state_col].astype("string").str.strip().str.upper(),
-            "dest_city_n": raw_prazo[city_col].astype("string").str.strip().str.casefold(),
-            "base_n": raw_prazo[base_col].astype("string").str.strip(),
-            "lm_dias": pd.to_numeric(raw_prazo[dias_col], errors="coerce"),
+            "dest_state": raw[state_col].astype("string").str.strip().str.upper(),
+            "dest_city_n": raw[city_col].astype("string").str.strip().str.casefold(),
+            "base_n": raw[base_col].astype("string").str.strip(),
+            "lm_dias": pd.to_numeric(raw[dias_col], errors="coerce"),
+            "contato": _as_text(raw[contato_col]) if contato_col else pd.NA,
+            "telefone": _as_text(raw[fone_col]) if fone_col else pd.NA,
         }
-    ).dropna(subset=["dest_city_n", "lm_dias"])
+    )
+    return lookup.dropna(subset=["dest_city_n", "lm_dias"])
 
-    raw_resp = _read_excel(path, sheet_name=resp_sheet)
-    raw_resp.columns = [str(c).strip() for c in raw_resp.columns]
-    cols = list(raw_resp.columns)
+
+def _load_carteira(path: Path, sheet: str) -> pd.DataFrame:
+    raw = _read_excel(path, sheet_name=sheet)
+    raw.columns = [str(c).strip() for c in raw.columns]
+    cols = list(raw.columns)
     owner_col = next((c for c in cols if "responsab" in c.lower() or "责任" in c), None)
-    base_col_resp = next(
+    base_col = next(
         (
             c
             for c in cols
@@ -145,28 +199,99 @@ def load_prazo_tables(source: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     if owner_col is None:
         owner_col = cols[1] if len(cols) > 1 else cols[0]
     payload = {
-        "base": raw_resp[base_col_resp].astype("string").str.strip(),
-        "responsavel": raw_resp[owner_col].astype("string").str.strip(),
+        "base": raw[base_col].astype("string").str.strip(),
+        "responsavel": raw[owner_col].astype("string").str.strip(),
     }
     tipo_col = next(
-        (
-            c
-            for c in cols
-            if c not in {owner_col, base_col_resp} and ("opera" in c.lower() or "操作" in c)
-        ),
+        (c for c in cols if c not in {owner_col, base_col} and ("opera" in c.lower() or "操作" in c)),
         None,
     )
     uf_col = next((c for c in cols if str(c).strip().upper() == "UF"), None)
     sac_col = next((c for c in cols if str(c).strip().upper() == "SAC"), None)
     if tipo_col is not None:
-        payload["tipo_operacao"] = raw_resp[tipo_col].astype("string").str.strip()
+        payload["tipo_operacao"] = raw[tipo_col].astype("string").str.strip()
     if uf_col is not None:
-        payload["uf"] = raw_resp[uf_col].astype("string").str.strip()
+        payload["uf"] = raw[uf_col].astype("string").str.strip()
     if sac_col is not None:
-        payload["sac"] = raw_resp[sac_col].astype("string").str.strip()
+        payload["sac"] = raw[sac_col].astype("string").str.strip()
     resp = pd.DataFrame(payload).dropna(subset=["base"])
-    resp = resp.loc[~resp["base"].isin(["", "nan", "None", "<NA>"])]
-    return lookup, resp
+    return resp.loc[~resp["base"].isin(["", "nan", "None", "<NA>"])].reset_index(drop=True)
+
+
+def _load_etapa(path: Path, sheet: str | None) -> pd.DataFrame:
+    if sheet is None:
+        return pd.DataFrame(columns=list(_EMPTY_ETAPA))
+    raw = _read_excel(path, sheet_name=sheet)
+    raw.columns = [str(c).strip() for c in raw.columns]
+    track_col = _find_header(raw.columns, "rastreio", "ultimo", "último") or raw.columns[0]
+    etapa_col = _find_header(raw.columns, "etapa") or raw.columns[min(1, len(raw.columns) - 1)]
+    etapa = pd.DataFrame(
+        {
+            "ultimo_rastreio": _as_text(raw[track_col]),
+            "etapa": _as_text(raw[etapa_col]),
+        }
+    ).dropna(subset=["ultimo_rastreio"])
+    return etapa.reset_index(drop=True)
+
+
+def _load_assistentes(path: Path, sheet: str | None) -> pd.DataFrame:
+    if sheet is None:
+        return pd.DataFrame(columns=list(_EMPTY_ASSISTENTES))
+    raw = _read_excel(path, sheet_name=sheet, header=None)
+    header_at = None
+    for idx, row in raw.iterrows():
+        blob = " ".join(str(v) for v in row.tolist() if pd.notna(v)).casefold()
+        if "demanda" in blob:
+            header_at = idx
+            break
+    if header_at is None:
+        return pd.DataFrame(columns=list(_EMPTY_ASSISTENTES))
+    headers = [str(v).strip() if pd.notna(v) else f"col_{i}" for i, v in enumerate(raw.loc[header_at].tolist())]
+    body = raw.iloc[int(header_at) + 1 :].copy()
+    body.columns = headers
+    name_col = _find_header(body.columns, "responsab", "责任") or body.columns[0]
+    extra_col = _find_header(body.columns, "extra", "额外")
+    demanda_col = next(
+        (c for c in body.columns if c != extra_col and "demanda" in str(c).casefold()),
+        None,
+    )
+    frame = pd.DataFrame(
+        {
+            "assistente": _as_text(body[name_col]),
+            "demanda": _as_text(body[demanda_col]) if demanda_col else pd.NA,
+            "demanda_extra": _as_text(body[extra_col]) if extra_col else pd.NA,
+        }
+    ).dropna(subset=["assistente"])
+    return frame.reset_index(drop=True)
+
+
+def load_prazo_book(source: str | Path) -> PrazoBook:
+    """Lê a responsabilidade nova: prazo, carteira, etapa do rastreio e assistentes.
+
+    A carteira é a folha com RESPONSABILIDADE no nome. `RESP. ETAPA` fica de fora
+    dessa escolha. UF e SAC continuam opcionais para a planilha antiga.
+    """
+    path = Path(source)
+    names = _excel_sheets(path)
+    prazo_sheet = _pick_named_sheet(
+        names,
+        lambda name: ("last mile" in name.lower() or "时效" in name) and "etapa" not in name.lower(),
+    ) or names[min(2, len(names) - 1)]
+    resp_sheet = _pick_named_sheet(names, _is_carteira_sheet) or (names[1] if len(names) > 1 else names[0])
+    etapa_sheet = _pick_named_sheet(names, lambda name: "etapa" in name.lower())
+    demanda_sheet = _pick_named_sheet(names, lambda name: "demad" in name.lower())
+    return PrazoBook(
+        lookup=_load_lookup(path, prazo_sheet),
+        responsabilidade=_load_carteira(path, resp_sheet),
+        etapa=_load_etapa(path, etapa_sheet),
+        assistentes=_load_assistentes(path, demanda_sheet),
+    )
+
+
+def load_prazo_tables(source: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Lê prazo D0/D+N por cidade e a carteira de responsabilidade por base."""
+    book = load_prazo_book(source)
+    return book.lookup, book.responsabilidade
 
 
 def apply_inbound_resumo(bd: pd.DataFrame, prazo_lookup: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
